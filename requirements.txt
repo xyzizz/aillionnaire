@@ -1,4 +1,4 @@
-crewai==0.108.0
+crewai==1.8.0
 longbridge==0.2.77
 pandas==2.2.3
 pydantic==2.11.2

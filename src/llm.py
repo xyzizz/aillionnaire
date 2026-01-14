@@ -10,7 +10,7 @@ class LLM:
     @classmethod
     def deepseek(cls) -> _LLM:
         deepseek_llm = _LLM(
-            model="openai/deepseek-chat",
+            model="deepseek/deepseek-chat",
             base_url="https://api.deepseek.com/v1/",
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             temperature=0,

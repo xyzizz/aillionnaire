@@ -1,49 +1,86 @@
 fetch_data_task:
   description: >
-    任务描述：
-    1. 通过工具获取{stock_ticker}股票的最新交易数据，计算该股票的MACD（移动平均线收敛散度）技术指标
-    2. 重点关注最新时间段的数据点，确保分析结果的时效性
-    3. 将获取的数据整理成标准格式，包含最新交易时间、收盘价、MACD值及信号线数值
-    4. 返回包含最新时间戳、收盘价、MACD值和MACD信号线值的列表
-  goal: 获取{stock_ticker}的最新MACD数据。
-  expected_output: 有效的分日数据列表，包含日期、收盘价、MACD线值、信号线和MACD柱状图值。
+    任务描述（必须严格执行）：
+    1) 仅调用一次“LongBridge MACD 工具”获取 stock_ticker 的 MACD 日线数据。
+       注意：工具成功时返回二元结构 (hist_list, latest_info)，失败时可能返回字符串错误信息。
+    2) 将工具返回的数据解包、清洗、对齐字段名，形成稳定的结构化输出供下游消费：
+       - 字段必须包含：Close, MACD, MACD_Signal, MACD_Hist, timestamp
+       - recent 需要过滤 NaN，仅保留有效点
+       - timestamp 统一为 ISO-8601 字符串
+    3) 若无数据/样本不足/出现错误：必须在 data_quality 中明确标注，禁止编造数值。
+    输出要求：
+    - 只输出一个 JSON 对象（禁止 Markdown/代码块/额外文字）
+    - 必须包含 latest、recent、data_quality 等关键字段（见 expected_output 的 schema）
+  goal: 获取 stock_ticker 的 MACD 数据并输出可解析 JSON。
+  expected_output: >
+    仅输出一个 JSON 对象（禁止花括号示例，以下为字段清单；键名必须严格一致）：
+    - ticker: 字符串，例如 NVDA.US
+    - latest: 对象，必须包含 timestamp, Close, MACD, MACD_Signal, MACD_Hist
+    - previous: 对象或 null；若非 null，字段同 latest
+    - recent: 数组（对象列表），每个对象字段同 latest
+    - raw_latest_info: 字符串
+    - data_quality: 对象，必须包含 ok(布尔), issues(字符串数组), n_total(整数), n_valid(整数)
 
 analyze_macd_task:
   description: >
-    任务描述：
-    1. 对{stock_ticker}的MACD数据进行深入分析
-    2. 判断是否出现MACD金叉（MACD线从下向上穿越信号线）或死叉（MACD线从上向下穿越信号线）形态，并预测短期价格走势
-    3. 基于技术分析结果制定交易策略：金叉形态考虑买入，死叉形态考虑卖出，无明显信号则建议持有
-    4. 提供完整分析报告，包括最新股价、交易建议（买入/卖出/持有）的具体理由及相关MACD技术数据
-  goal: 分析{stock_ticker}的MACD数据，并根据预定义的MACD交叉规则决定是否生成买入或卖出信号。
-  expected_output: 最新的股价、表示交易决定的字符串（'BUY'、'SELL'或'HOLD'）、以及做出该决定的原因。
+    任务描述（必须严格执行）：
+    1) 仅基于 fetch_data_task 的 JSON 输出进行分析，不调用任何外部工具，不引入新闻/基本面/成交量等信息。
+    2) 使用“严格信号过滤”生成交易决策：BUY / SELL / HOLD：
+       - 交叉判定使用 latest 与 previous：
+         - golden_cross: previous.MACD <= previous.MACD_Signal 且 latest.MACD > latest.MACD_Signal
+         - death_cross:  previous.MACD >= previous.MACD_Signal 且 latest.MACD < latest.MACD_Signal
+       - 柱状图连续2日同向放大（使用 recent 中最后3个有效点：倒数第3、倒数第2、倒数第1）：
+         - bullish_hist_expand: hist(倒数第3) < hist(倒数第2) < hist(倒数第1)
+         - bearish_hist_expand: hist(倒数第3) > hist(倒数第2) > hist(倒数第1)
+       - 决策规则：
+         - BUY 仅当 golden_cross && bullish_hist_expand
+         - SELL 仅当 death_cross && bearish_hist_expand
+         - 其他 => HOLD
+    3) 输出必须包含下游投顾写报告所需全部关键数据（latest/previous/信号细节/风控计划/理由）。
+    4) 若 data_quality.ok=false 或有效点不足（previous 为空或 recent<3）：强制 decision=HOLD，并解释原因。
+    输出要求：
+    - 只输出一个 JSON 对象（禁止 Markdown/代码块/额外文字）
+    - decision 只能是 "BUY" | "SELL" | "HOLD"
+  goal: 基于严格规则生成 stock_ticker 的结构化交易决策与风控计划。
+  expected_output: >
+    仅输出一个 JSON 对象（禁止花括号示例，以下为字段清单；键名必须严格一致）：
+    - ticker: 字符串
+    - decision: 字符串，只能是 BUY / SELL / HOLD
+    - confidence: 数值 0 到 1
+    - signal: 对象，必须包含 golden_cross, death_cross, bullish_hist_expand, bearish_hist_expand（布尔）
+    - key_values: 对象，必须包含 latest 与 previous（字段同 fetch_data_task 输出）
+    - risk_plan: 对象，必须包含 entry, entry_range(数组长度2), stop_loss, target, rr(固定 1:2)
+    - reasons: 字符串数组
+    - assumptions: 字符串数组
   context:
     - fetch_data_task # 依赖于数据获取任务的输出
 
 generate_advice_task:
   description: >
-    任务描述：
-    1. 整合{stock_ticker}的实时股价数据和MACD技术分析结果（包括买入/卖出/持有信号）
-    2. 生成中文投资建议报告，标题格式为："{stock_ticker} [信号]"，例如："股票名称 [买入]"
-    3. 报告内容应包含以下关键部分：
-       a. 最新市场数据：当前股价和关键MACD指标值
-       b. 市场信号分析：详细解释为何推荐买入/卖出/持有的技术依据
-       c. 风险评估：可能面临的市场风险和不确定因素
-       d. 后续观察重点：未来需要密切关注的价格区间或技术指标变化
-    4. 通过微信通知工具将完整投资建议推送给用户
-  goal: 生成详细的中文投资建议，并使用微信通知工具发送给用户。
+    任务描述（必须严格执行）：
+    1) 仅基于 analyze_macd_task 的 JSON 输出生成中文投资建议报告（不重新计算信号、不引入外部信息）。
+    2) 组装微信通知内容并调用微信通知工具发送：
+       - subject 必须为：stock_ticker 加空格加方括号 decision，例如：NVDA.US [HOLD]
+       - body 必须包含固定结构小节：
+         1) 最新市场数据
+         2) 信号解读（含交叉与柱状图过滤结果）
+         3) 执行计划（入场/止损/目标/风险回报）
+         4) 风险提示（至少3条）
+         5) 后续观察重点（给出触发条件）
+    3) 最终输出必须包含微信工具返回的状态字符串；若未配置 PUSHPLUS_TOKEN 导致跳过，也必须如实返回。
+  goal: 生成投资建议并通过微信工具发送，返回真实发送状态。
   context:
-    - fetch_data_task # 依赖于数据获取任务的输出
     - analyze_macd_task # 依赖于MACD分析任务的输出
-  expected_output: "微信通知已发送，包含针对{stock_ticker}的投资建议。"
+  expected_output: >
+    返回微信工具的状态字符串，必须包含 WeChat Status:（例如：WeChat Status: WeChat notification skipped: PushPlus Token not configured.）
 
-  # execute_trade_task:
+# execute_trade_task（示例，当前未启用）:
 #   description: >
 #     任务描述：
-#     1. 接收来自分析模块关于{stock_ticker}的交易决策信号
+#     1. 接收来自分析模块关于 stock_ticker 的交易决策信号
 #     2. 根据决策信号执行相应操作：
-#        - 买入信号：通过'execute_buy_order'工具提交{quantity}股的市价买单
-#        - 卖出信号：通过'execute_sell_order'工具提交{quantity}股的市价卖单
+#        - 买入信号：通过 execute_buy_order 工具提交 quantity 股的市价买单
+#        - 卖出信号：通过 execute_sell_order 工具提交 quantity 股的市价卖单
 #        - 持有信号：不进行任何交易操作
 #     3. 详细记录每笔交易的执行情况或未执行原因
 #     4. 生成交易执行报告，确认订单状态和执行结果
