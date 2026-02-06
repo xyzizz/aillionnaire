@@ -1,0 +1,16 @@
+# 多股票持仓配置
+# 每只股票支持设置：
+#   ticker   - 股票代码（LongBridge 格式，如 NVDA.US）
+#   name     - 股票中文名称（用于报告显示）
+#   shares   - 持有股数
+#   avg_cost - 平均购买价格（美元）
+
+stocks:
+  - ticker: "NVDA.US"
+    name: "英伟达"
+    shares: 30
+    avg_cost: 177
+  # - ticker: "FLNC.US"
+  #   name: "Fluence Energy"
+  #   shares: 210
+  #   avg_cost: 12

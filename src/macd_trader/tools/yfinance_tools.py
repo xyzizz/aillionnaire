@@ -22,9 +22,19 @@ class StockDataToolsInput(BaseModel):
 
 
 class YFinanceMACDTool(BaseTool):
-    name: str = "YFinance MACD Tool"
-    description: str = "Tools for fetching historical stock data and analyzing MACD technical indicators."
+    name: str = "QuoteMACDTool"
+    description: str = (
+        "Fetches historical stock data and calculates MACD technical indicators. "
+        "Input ticker can be Yahoo Finance format (NVDA) or LongBridge format (NVDA.US)."
+    )
     args_schema: type[BaseModel] = StockDataToolsInput
+
+    @staticmethod
+    def _normalize_ticker(ticker: str) -> str:
+        """Convert LongBridge-style ticker (NVDA.US) to Yahoo Finance format (NVDA)."""
+        if ticker.endswith(".US"):
+            return ticker[:-3]
+        return ticker
 
     def _fetch_data(
         self, stock_ticker: str, period: str = "3mo", interval: str = "1d"
@@ -105,9 +115,10 @@ class YFinanceMACDTool(BaseTool):
             ticker: Stock symbol to calculate MACD for
 
         Returns:
-            List of dictionaries containing historical MACD data and price information
+            Tuple of (hist_list, latest_info) with NaN rows filtered out
         """
-        hist = self._fetch_data(ticker)
+        yf_ticker = self._normalize_ticker(ticker)
+        hist = self._fetch_data(yf_ticker)
         if hist.empty:
             return f"Could not calculate MACD for {ticker} due to data fetching issues."
 
@@ -117,7 +128,6 @@ class YFinanceMACDTool(BaseTool):
             hist["MACD"] = macd.macd()
             hist["MACD_Signal"] = macd.macd_signal()
             hist["MACD_Hist"] = macd.macd_diff()  # Histogram
-            hist["Date"] = hist.index.strftime("%Y-%m-%d %H:%M:%S")  # Add date column
 
             # Extract latest indicator values for logging
             latest_data = hist.iloc[-1]
@@ -137,7 +147,7 @@ class YFinanceMACDTool(BaseTool):
             logging.info(
                 f"MACD for {ticker} ({latest_timestamp}): MACD={macd_value:.2f}, Signal={signal_value:.2f}, Hist={hist_value:.2f}"
             )
-            # Log detailed information for debugging
+
             latest_info = (
                 f"Latest MACD data for {ticker} ({latest_timestamp}):\n"
                 f"  Close Price: ${latest_data['Close']:.2f}\n"
@@ -146,8 +156,13 @@ class YFinanceMACDTool(BaseTool):
                 f"  MACD Histogram: {hist_value:.4f}"
             )
 
-            # Convert DataFrame to list of dictionaries for return
-            hist_list = hist.to_dict(orient="records")
+            # Filter out NaN rows and add timestamp column for clean output
+            valid = hist.dropna(subset=["MACD", "MACD_Signal", "MACD_Hist"])
+            valid["timestamp"] = valid.index.strftime("%Y-%m-%dT%H:%M:%S")
+            hist_list = valid[
+                ["Close", "MACD", "MACD_Signal", "MACD_Hist", "timestamp"]
+            ].to_dict(orient="records")
+
             return hist_list, latest_info
 
         except Exception as e:

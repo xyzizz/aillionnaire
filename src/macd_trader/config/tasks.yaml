@@ -1,88 +1,70 @@
-fetch_data_task:
+research_news_task:
   description: >
-    任务描述（必须严格执行）：
-    1) 仅调用一次“LongBridge MACD 工具”获取 stock_ticker 的 MACD 日线数据。
-       注意：工具成功时返回二元结构 (hist_list, latest_info)，失败时可能返回字符串错误信息。
-    2) 将工具返回的数据解包、清洗、对齐字段名，形成稳定的结构化输出供下游消费：
-       - 字段必须包含：Close, MACD, MACD_Signal, MACD_Hist, timestamp
-       - recent 需要过滤 NaN，仅保留有效点
-       - timestamp 统一为 ISO-8601 字符串
-    3) 若无数据/样本不足/出现错误：必须在 data_quality 中明确标注，禁止编造数值。
-    输出要求：
-    - 只输出一个 JSON 对象（禁止 Markdown/代码块/额外文字）
-    - 必须包含 latest、recent、data_quality 等关键字段（见 expected_output 的 schema）
-  goal: 获取 stock_ticker 的 MACD 数据并输出可解析 JSON。
+    【重要】你必须先调用 "YFinance News Tool" 工具，参数 ticker 为 "{stock_ticker}"（如有 .US 后缀请去掉，如 NVDA.US 传入 NVDA）。
+    不允许跳过工具调用直接输出。
+
+    步骤：
+    1) 调用 YFinance News Tool，获取 {stock_ticker} 的新闻、财报、财务指标数据。
+    2) 如果有搜索工具可用，额外搜索 "{stock_ticker} latest news earnings"。
+    3) 将工具返回的数据整理为结构化文本摘要。
+    4) 若工具返回为空或出错，如实标注"无可用数据"，禁止编造。
+  goal: 搜集 {stock_ticker}（{stock_name}）的最新市场资讯和财务数据。
   expected_output: >
-    仅输出一个 JSON 对象（禁止花括号示例，以下为字段清单；键名必须严格一致）：
-    - ticker: 字符串，例如 NVDA.US
-    - latest: 对象，必须包含 timestamp, Close, MACD, MACD_Signal, MACD_Hist
-    - previous: 对象或 null；若非 null，字段同 latest
-    - recent: 数组（对象列表），每个对象字段同 latest
-    - raw_latest_info: 字符串
-    - data_quality: 对象，必须包含 ok(布尔), issues(字符串数组), n_total(整数), n_valid(整数)
+    输出结构化纯文本报告，包含以下小节：
+    1) 公司近期新闻（最多5条关键新闻，含标题和摘要）
+    2) 财报信息（下一次财报日期、最近 EPS 表现）
+    3) 关键财务指标（市盈率、市值、分析师目标价等）
+    4) 资讯总结（一段话概括当前市场情绪）
 
 analyze_macd_task:
   description: >
-    任务描述（必须严格执行）：
-    1) 仅基于 fetch_data_task 的 JSON 输出进行分析，不调用任何外部工具，不引入新闻/基本面/成交量等信息。
-    2) 使用“严格信号过滤”生成交易决策：BUY / SELL / HOLD：
-       - 交叉判定使用 latest 与 previous：
-         - golden_cross: previous.MACD <= previous.MACD_Signal 且 latest.MACD > latest.MACD_Signal
-         - death_cross:  previous.MACD >= previous.MACD_Signal 且 latest.MACD < latest.MACD_Signal
-       - 柱状图连续2日同向放大（使用 recent 中最后3个有效点：倒数第3、倒数第2、倒数第1）：
-         - bullish_hist_expand: hist(倒数第3) < hist(倒数第2) < hist(倒数第1)
-         - bearish_hist_expand: hist(倒数第3) > hist(倒数第2) > hist(倒数第1)
-       - 决策规则：
-         - BUY 仅当 golden_cross && bullish_hist_expand
-         - SELL 仅当 death_cross && bearish_hist_expand
-         - 其他 => HOLD
-    3) 输出必须包含下游投顾写报告所需全部关键数据（latest/previous/信号细节/风控计划/理由）。
-    4) 若 data_quality.ok=false 或有效点不足（previous 为空或 recent<3）：强制 decision=HOLD，并解释原因。
-    输出要求：
-    - 只输出一个 JSON 对象（禁止 Markdown/代码块/额外文字）
-    - decision 只能是 "BUY" | "SELL" | "HOLD"
-  goal: 基于严格规则生成 stock_ticker 的结构化交易决策与风控计划。
-  expected_output: >
-    仅输出一个 JSON 对象（禁止花括号示例，以下为字段清单；键名必须严格一致）：
-    - ticker: 字符串
-    - decision: 字符串，只能是 BUY / SELL / HOLD
-    - confidence: 数值 0 到 1
-    - signal: 对象，必须包含 golden_cross, death_cross, bullish_hist_expand, bearish_hist_expand（布尔）
-    - key_values: 对象，必须包含 latest 与 previous（字段同 fetch_data_task 输出）
-    - risk_plan: 对象，必须包含 entry, entry_range(数组长度2), stop_loss, target, rr(固定 1:2)
-    - reasons: 字符串数组
-    - assumptions: 字符串数组
-  context:
-    - fetch_data_task # 依赖于数据获取任务的输出
+    【重要】你必须先调用 "QuoteMACDTool" 工具，参数 ticker 为 "{stock_ticker}"。
+    不允许跳过工具调用直接输出。工具成功时返回元组 (hist_list, latest_info)。
 
-generate_advice_task:
+    步骤：
+    1) 调用一次 MACD 工具获取 {stock_ticker} 的数据。
+    2) 从返回的 hist_list 中过滤掉 NaN 值，提取 latest（最后一个）、previous（倒数第二个）、recent（最后若干个有效点）。
+    3) 执行严格信号过滤：
+       - golden_cross: previous.MACD <= previous.MACD_Signal 且 latest.MACD > latest.MACD_Signal
+       - death_cross: previous.MACD >= previous.MACD_Signal 且 latest.MACD < latest.MACD_Signal
+       - bullish_hist_expand: recent 最后3个点的 MACD_Hist 递增
+       - bearish_hist_expand: recent 最后3个点的 MACD_Hist 递减
+       - BUY 仅当 golden_cross 且 bullish_hist_expand
+       - SELL 仅当 death_cross 且 bearish_hist_expand
+       - 其他情况一律 HOLD
+    4) 综合上游 research_news_task 的资讯，评估消息面情绪（positive/neutral/negative）。
+    5) 结合持仓（{shares} 股，均价 {avg_cost}）计算盈亏。
+    6) 若数据异常或有效点不足，强制 HOLD。
+  goal: 获取 MACD 数据，综合分析，生成 {stock_ticker} 的交易决策。
+  expected_output: >
+    仅输出一个 JSON 对象，键名严格一致：
+    ticker, decision(BUY/SELL/HOLD), confidence(0-1),
+    signal(golden_cross/death_cross/bullish_hist_expand/bearish_hist_expand 布尔值),
+    key_values(latest 和 previous 的 timestamp/Close/MACD/MACD_Signal/MACD_Hist),
+    risk_plan(entry/stop_loss/target/rr),
+    position(shares/avg_cost/current_price/unrealized_pnl/unrealized_pnl_pct),
+    news_sentiment(positive/neutral/negative),
+    reasons(字符串数组), assumptions(字符串数组)
+  context:
+    - research_news_task
+
+generate_report_task:
   description: >
-    任务描述（必须严格执行）：
-    1) 仅基于 analyze_macd_task 的 JSON 输出生成中文投资建议报告（不重新计算信号、不引入外部信息）。
-    2) 组装微信通知内容并调用微信通知工具发送：
-       - subject 必须为：stock_ticker 加空格加方括号 decision，例如：NVDA.US [HOLD]
-       - body 必须包含固定结构小节：
-         1) 最新市场数据
-         2) 信号解读（含交叉与柱状图过滤结果）
-         3) 执行计划（入场/止损/目标/风险回报）
-         4) 风险提示（至少3条）
-         5) 后续观察重点（给出触发条件）
-    3) 最终输出必须包含微信工具返回的状态字符串；若未配置 PUSHPLUS_TOKEN 导致跳过，也必须如实返回。
-  goal: 生成投资建议并通过微信工具发送，返回真实发送状态。
-  context:
-    - analyze_macd_task # 依赖于MACD分析任务的输出
-  expected_output: >
-    返回微信工具的状态字符串，必须包含 WeChat Status:（例如：WeChat Status: WeChat notification skipped: PushPlus Token not configured.）
+    仅基于上游 analyze_macd_task 输出的 JSON 数据，转写为中文投资建议报告。
+    不调用任何工具，不重新计算，只做格式转换。
 
-# execute_trade_task（示例，当前未启用）:
-#   description: >
-#     任务描述：
-#     1. 接收来自分析模块关于 stock_ticker 的交易决策信号
-#     2. 根据决策信号执行相应操作：
-#        - 买入信号：通过 execute_buy_order 工具提交 quantity 股的市价买单
-#        - 卖出信号：通过 execute_sell_order 工具提交 quantity 股的市价卖单
-#        - 持有信号：不进行任何交易操作
-#     3. 详细记录每笔交易的执行情况或未执行原因
-#     4. 生成交易执行报告，确认订单状态和执行结果
-#   context:
-#     - analyze_macd_task # 依赖于分析任务的输出
+    报告必须包含以下小节：
+    a) 股票概况（代码、名称、当前价格、持仓盈亏）
+    b) 最新市场数据（MACD 关键数值）
+    c) 消息面分析
+    d) 信号解读（交叉判定 + 柱状图 + 最终决策）
+    e) 执行计划（入场/止损/目标/风险回报）
+    f) 风险提示（至少3条）
+    g) 后续观察重点
+
+    报告标题格式：{stock_ticker} {stock_name} [决策]，"决策"替换为上游 JSON 中的 decision 值。
+  goal: 将 {stock_ticker}（{stock_name}）的分析结果转写为中文投资建议报告。
+  expected_output: >
+    完整的中文投资建议报告（纯文本），开头第一行为标题行。
+  context:
+    - analyze_macd_task

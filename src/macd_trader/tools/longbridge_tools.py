@@ -25,7 +25,7 @@ class LBQuoteHistoryInput(BaseModel):
 
 
 class LongBridgeMACDTool(BaseTool):
-    name: str = "LBQuoteMACDTool"
+    name: str = "QuoteMACDTool"
     description: str = "Retrieves historical stock data and calculates MACD technical indicators for stock trend analysis."
     args_schema: type[BaseModel] = LBQuoteHistoryInput
 
@@ -51,7 +51,7 @@ class LongBridgeMACDTool(BaseTool):
         """Calculates the MACD indicator for a given stock ticker and returns the latest values."""
         hist = self.get_history(
             ticker,
-            start=datetime.date.today() - datetime.timedelta(days=60),
+            start=datetime.date.today() - datetime.timedelta(days=90),
             end=datetime.date.today(),
         )
         if hist.empty:

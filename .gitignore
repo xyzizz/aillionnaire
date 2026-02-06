@@ -88,4 +88,6 @@ secrets/
 *.db
 *.sqlite3
 *.csv
-*.json # Might want to keep specific json config files 
+
+# Analysis results (generated daily, stored locally)
+results/

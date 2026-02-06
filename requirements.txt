@@ -1,9 +1,11 @@
 crewai==1.8.0
+crewai-tools
 litellm
 longbridge
 pandas
 pydantic
 python-dotenv
+PyYAML
 Requests
 ta
 yfinance
