@@ -38,6 +38,7 @@ def send_wechat_notification(subject: str, body: str) -> str:
                 "title": subject,
                 "content": body,
                 "channel": "wechat",
+                "template": "markdown",
             },
             timeout=10,
         )
@@ -56,7 +57,7 @@ def send_wechat_notification(subject: str, body: str) -> str:
         return msg
 
 
-def send_batch_notification(reports: list[dict]) -> str:
+def send_batch_markdown_notification(reports: list[dict]) -> str:
     """批量发送多只股票的分析报告（合并为一条通知）。
 
     Args:
@@ -75,7 +76,6 @@ def send_batch_notification(reports: list[dict]) -> str:
     # 构建正文：拼接所有报告
     body_parts = []
     for r in reports:
-        body_parts.append(f"{'=' * 40}")
         body_parts.append(f"📊 {r['ticker']} - {r.get('name', '')} [{r['decision']}]")
         body_parts.append(f"{'=' * 40}")
         body_parts.append(r["report"])

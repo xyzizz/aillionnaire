@@ -10,7 +10,11 @@ stocks:
     name: "英伟达"
     shares: 30
     avg_cost: 177
-  # - ticker: "FLNC.US"
-  #   name: "Fluence Energy"
-  #   shares: 210
-  #   avg_cost: 12
+  - ticker: "FLNC.US"
+    name: "Fluence Energy"
+    shares: 210
+    avg_cost: 12
+  # - ticker: "TSLA.US"
+  #   name: "特斯拉"
+  #   shares: 2
+  #   avg_cost: 400

@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -6,8 +7,10 @@ from pathlib import Path
 import yaml
 
 from src.macd_trader.crew import TradingCrew
-from src.macd_trader.notification import send_batch_notification
+from src.macd_trader.notification import send_batch_markdown_notification
 from src.macd_trader.result_storage import save_result
+from src.macd_trader.tools.news_tools import YFinanceNewsTool
+from src.macd_trader.tools.longbridge_tools import LongBridgeMACDTool
 
 # Add the project root to the Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -104,11 +107,42 @@ def run_single_stock(stock: dict) -> dict | None:
     logger.info(f"Analyzing {ticker} ({name}) | {shares} shares @ ${avg_cost}")
     logger.info(f"{'=' * 60}")
 
+    # --- Pre-fetch data using tools directly (bypass LLM tool calling) ---
+    news_tool = YFinanceNewsTool()
+    macd_tool = LongBridgeMACDTool()
+
+    logger.info(f"[{ticker}] Pre-fetching news data...")
+    try:
+        news_data = news_tool._run(ticker=ticker)
+    except Exception as e:
+        logger.warning(f"[{ticker}] Failed to fetch news: {e}")
+        news_data = f"无法获取 {ticker} 的新闻数据: {e}"
+
+    logger.info(f"[{ticker}] Pre-fetching MACD data...")
+    try:
+        macd_result = macd_tool._run(ticker=ticker)
+        if isinstance(macd_result, tuple) and len(macd_result) == 2:
+            hist_list, latest_info = macd_result
+            logger.info(f"[{ticker}] Stock points: {len(hist_list)}")
+
+            macd_data = (
+                f"{latest_info}\n\n"
+                f"--- Recent MACD History (last {len(hist_list)} points) ---\n"
+                f"{json.dumps(hist_list, indent=2, ensure_ascii=False, default=str)}"
+            )
+        else:
+            macd_data = str(macd_result)
+    except Exception as e:
+        logger.warning(f"[{ticker}] Failed to fetch MACD: {e}")
+        macd_data = f"无法获取 {ticker} 的 MACD 数据: {e}"
+
     inputs = {
         "stock_ticker": ticker,
         "stock_name": name,
         "shares": shares,
         "avg_cost": avg_cost,
+        "news_data": news_data,
+        "macd_data": macd_data,
     }
 
     try:
@@ -171,7 +205,7 @@ def run():
     if reports:
         logger.info(f"Sending notification for {len(reports)} stock(s)...")
         try:
-            status = send_batch_notification(reports)
+            status = send_batch_markdown_notification(reports)
             logger.info(f"Notification status: {status}")
         except Exception as e:
             logger.error(f"Failed to send notification: {e}", exc_info=True)

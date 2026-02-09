@@ -1,14 +1,12 @@
 research_news_task:
   description: >
-    【重要】你必须先调用 "YFinance News Tool" 工具，参数 ticker 为 "{stock_ticker}"（如有 .US 后缀请去掉，如 NVDA.US 传入 NVDA）。
-    不允许跳过工具调用直接输出。
+    以下是通过工具预先获取的 {stock_ticker}（{stock_name}）的市场资讯和财务数据：
 
-    步骤：
-    1) 调用 YFinance News Tool，获取 {stock_ticker} 的新闻、财报、财务指标数据。
-    2) 如果有搜索工具可用，额外搜索 "{stock_ticker} latest news earnings"。
-    3) 将工具返回的数据整理为结构化文本摘要。
-    4) 若工具返回为空或出错，如实标注"无可用数据"，禁止编造。
-  goal: 搜集 {stock_ticker}（{stock_name}）的最新市场资讯和财务数据。
+    {news_data}
+
+    请根据以上数据，整理为结构化的中文文本摘要。
+    若数据显示"无可用数据"或为空，如实标注，禁止编造。
+  goal: 整理 {stock_ticker}（{stock_name}）的最新市场资讯和财务数据摘要。
   expected_output: >
     输出结构化纯文本报告，包含以下小节：
     1) 公司近期新闻（最多5条关键新闻，含标题和摘要）
@@ -18,13 +16,13 @@ research_news_task:
 
 analyze_macd_task:
   description: >
-    【重要】你必须先调用 "QuoteMACDTool" 工具，参数 ticker 为 "{stock_ticker}"。
-    不允许跳过工具调用直接输出。工具成功时返回元组 (hist_list, latest_info)。
+    以下是通过工具预先获取的 {stock_ticker} 的 MACD 技术指标数据：
 
-    步骤：
-    1) 调用一次 MACD 工具获取 {stock_ticker} 的数据。
-    2) 从返回的 hist_list 中过滤掉 NaN 值，提取 latest（最后一个）、previous（倒数第二个）、recent（最后若干个有效点）。
-    3) 执行严格信号过滤：
+    {macd_data}
+
+    请根据以上数据执行以下分析步骤：
+    1) 从数据中提取 latest（最后一个）、previous（倒数第二个）、recent（最后若干个有效点）。
+    2) 执行严格信号过滤：
        - golden_cross: previous.MACD <= previous.MACD_Signal 且 latest.MACD > latest.MACD_Signal
        - death_cross: previous.MACD >= previous.MACD_Signal 且 latest.MACD < latest.MACD_Signal
        - bullish_hist_expand: recent 最后3个点的 MACD_Hist 递增
@@ -32,10 +30,10 @@ analyze_macd_task:
        - BUY 仅当 golden_cross 且 bullish_hist_expand
        - SELL 仅当 death_cross 且 bearish_hist_expand
        - 其他情况一律 HOLD
-    4) 综合上游 research_news_task 的资讯，评估消息面情绪（positive/neutral/negative）。
-    5) 结合持仓（{shares} 股，均价 {avg_cost}）计算盈亏。
-    6) 若数据异常或有效点不足，强制 HOLD。
-  goal: 获取 MACD 数据，综合分析，生成 {stock_ticker} 的交易决策。
+    3) 综合上游 research_news_task 的资讯，评估消息面情绪（positive/neutral/negative）。
+    4) 结合持仓（{shares} 股，均价 {avg_cost}）计算盈亏。
+    5) 若数据异常或有效点不足，强制 HOLD。
+  goal: 综合分析数据，生成 {stock_ticker} 的交易决策。
   expected_output: >
     仅输出一个 JSON 对象，键名严格一致：
     ticker, decision(BUY/SELL/HOLD), confidence(0-1),
@@ -51,7 +49,7 @@ analyze_macd_task:
 generate_report_task:
   description: >
     仅基于上游 analyze_macd_task 输出的 JSON 数据，转写为中文投资建议报告。
-    不调用任何工具，不重新计算，只做格式转换。
+    不重新计算，只做格式转换。
 
     报告必须包含以下小节：
     a) 股票概况（代码、名称、当前价格、持仓盈亏）

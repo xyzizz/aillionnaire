@@ -1,37 +1,14 @@
 import logging
-import os
 
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 
-from src.macd_trader.tools import YFinanceMACDTool
 from src.llm import LLM
-from src.macd_trader.tools.news_tools import YFinanceNewsTool
 
 logger = logging.getLogger(__name__)
 
-# Initialize tools and LLM
-macd_tool = YFinanceMACDTool()
-yf_news_tool = YFinanceNewsTool()
+# Initialize LLM (tools are no longer needed — data is pre-fetched in main.py)
 llm = LLM.deepseek()
-
-# Optionally load SerperDevTool if SERPER_API_KEY is configured
-search_tool = None
-if os.getenv("SERPER_API_KEY"):
-    try:
-        from crewai_tools import SerperDevTool
-
-        search_tool = SerperDevTool()
-        logger.info("SerperDevTool loaded successfully.")
-    except ImportError:
-        logger.warning(
-            "crewai_tools not installed. Web search disabled. "
-            "Install with: pip install crewai-tools"
-        )
-else:
-    logger.info(
-        "SERPER_API_KEY not set. Web search disabled, using YFinance news only."
-    )
 
 
 @CrewBase
@@ -55,12 +32,8 @@ class TradingCrew:
 
     @agent
     def market_researcher(self) -> Agent:
-        researcher_tools = [yf_news_tool]
-        if search_tool is not None:
-            researcher_tools.append(search_tool)
         return Agent(
             config=self.agents_config["market_researcher"],
-            tools=researcher_tools,
             llm=llm,
             verbose=True,
         )
@@ -69,7 +42,6 @@ class TradingCrew:
     def trading_analyst(self) -> Agent:
         return Agent(
             config=self.agents_config["trading_analyst"],
-            tools=[macd_tool],
             llm=llm,
             verbose=True,
         )
