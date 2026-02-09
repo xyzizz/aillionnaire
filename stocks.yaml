@@ -14,7 +14,7 @@ stocks:
     name: "Fluence Energy"
     shares: 210
     avg_cost: 12
-  # - ticker: "TSLA.US"
-  #   name: "特斯拉"
-  #   shares: 2
-  #   avg_cost: 400
+  - ticker: "TSLA.US"
+    name: "特斯拉"
+    shares: 2
+    avg_cost: 400
